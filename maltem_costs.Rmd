@@ -1,0 +1,356 @@
+
+---
+title: MALTEM costs overview
+author: 
+  - Laia Cirera
+  - Joe Brew
+  - Elisa Sicuri 
+fig_height: 2.6
+fig_width: 4
+header-includes: \usepackage{longtable}
+highlight: zenburn
+latex_engine: xelatex
+output:
+  pdf_document:
+    includes:
+      in_header: mystyle.sty
+  html_document: default
+tables: yes
+toc: yes
+---
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, comment = NA, error= FALSE }
+# No scientific notation
+options(scipen=999)
+
+#####
+# PACKAGES
+#####
+library(dplyr)
+library(xtable)
+library(ggplot2)
+library(knitr)
+library(png)
+library(grid)
+library(extrafont)
+library(tidyr)
+library(gridExtra)
+library(maptools)
+library(rgeos)
+library(ggmap)
+
+loadfonts(device = 'postscript', quiet = TRUE)
+
+# BASIC KNITR OPTIONS
+opts_chunk$set(comment = NA, echo = FALSE, warning = FALSE, message = FALSE, error = FALSE, fig.height = 3, fig.align='center')
+options(xtable.comment = FALSE)
+```
+
+```{r, results='hide'}
+# GET THEME FOR GGPLOTS
+source('theme.R')
+# READ IN DATA
+source('read_in.R')
+```
+
+```{r, fig.align='center', fig.height = 3}
+# TITLE MAP
+ggplot() +
+  coord_map() +
+  geom_polygon(data = moz3_fortified,
+       aes(x = long, y =lat, group = group), fill = 'grey', color = 'white') +
+    geom_polygon(data = maputo_fortified,
+       aes(x = long, y =lat, group = group), fill = 'darkred', color = NA, alpha = 0.6) +
+  theme_tufte() +
+  theme(axis.ticks.length = unit(0.001, "mm")) + labs(x=NULL, y=NULL) +
+  theme(axis.line=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank(),
+      # legend.position="none",
+      panel.background=element_blank(),
+      panel.border=element_blank(),
+      panel.grid.major=element_blank(),
+      panel.grid.minor=element_blank(),
+      plot.background=element_blank())
+```
+
+Full code at https://github.com/joebrew/maltem_costs
+
+\newpage
+
+
+# Introduction  
+
+What falls is a brief overview of costs associated with the MALTEM program.
+
+## By area
+
+```{r, fig.height = 4.5}
+
+# Distribution of all costs by objreal
+temp <- df %>%
+  group_by(Area = toupper(OBJReal)) %>%
+  summarise(n = n(),
+            dollars = sum(USD)) %>%
+  mutate(p = dollars / sum(dollars) * 100) %>%
+  arrange(desc(p)) %>%
+  filter(!is.na(Area))
+  
+# Order factor levels by p
+temp$Area <- factor(temp$Area, levels = temp$Area)
+
+ggplot(data = temp,
+       aes(x = Area, y = p)) +
+  geom_bar(stat = 'identity',
+           fill = 'darkred',
+           alpha = 0.6) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1, 
+                                   size = 10)) +
+  xlab('Area') +
+  ylab('Percent of total expenditure') +
+  geom_text(aes(y = p + 2 ,
+                label = paste0(round(p, 2), '%')),
+            size = 2) +
+  ggtitle('All costs by area (excluding unclassified)')
+
+```
+
+## MDA expenditures over time
+
+
+```{r}
+
+# MDA expenditures over time
+mda_time <- mda %>%
+  group_by(Datapago) %>%
+  summarise(dollars = sum(USD)) %>%
+  mutate(dollars_cum = cumsum(dollars))
+
+# Month specific MDA expenditures over time
+mda_month <- mda_time %>%
+  mutate(month_numer = format(Datapago, '%m'),
+         month = format(Datapago, '%B')) %>%
+  group_by(month, month_numer) %>%
+  summarise(dollars = sum(dollars)) 
+mda_month <- mda_month[order(as.numeric(mda_month$month_numer)),]
+mda_month$month <- factor(mda_month$month, levels = mda_month$month)
+ggplot(data = mda_month,
+       aes(x = month, y = dollars)) +
+  geom_bar(stat = 'identity', fill = 'darkred', alpha = 0.6) +
+  xlab('Month') +
+  ylab('Dollars spent') +
+  ggtitle('Month-specific MDA expenditures over time') +
+    theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1, 
+                                   size = 10))
+
+
+```
+
+
+```{r}
+
+ggplot(data = mda_time,
+       aes(x = Datapago, y = dollars_cum)) +
+  geom_area(fill = 'darkred', alpha = 0.6) +
+  xlab('Date') +
+  ylab('Dollars spent') +
+  ggtitle('Cumulative MDA expenditures over time')
+
+# ADD FUTURE ESTIMATIONS
+
+```
+
+
+## MDA expenditures by item
+
+```{r, fig.height = 4.5}
+# MDA by item
+by_item <- 
+  mda %>%
+  group_by(Item) %>%
+  summarise(n = n(),
+            dollars = sum(USD)) %>%
+  arrange(desc(dollars)) %>%
+  mutate(p = dollars / sum(dollars)  * 100)
+
+by_item$Item <- factor(by_item$Item, levels = by_item$Item)
+
+ggplot(data = by_item,
+       aes(x = Item, y = p)) +
+  geom_bar(stat = 'identity', 
+           fill = 'darkred',
+           alpha = 0.6) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1, 
+                                   size = 10)) +
+  ylab('Percent') +
+      geom_text(aes(y = p + 2 ,
+                label = paste0( round(p, 2), '%')),
+            size = 2) 
+
+
+```
+
+# IRS details
+
+
+```{r}
+# Get cmulative counts
+for (j in 2:ncol(irs)){
+  column_name <- names(irs)[j]
+  new_name <- paste0(column_name, '_p')
+  irs[,new_name] <- cumsum(irs[,j])
+}
+```
+
+
+## Houses sprayed
+
+```{r, fig.height = 8}
+g1 <- ggplot(data = irs,
+       aes(x = week,
+       y = houses_sprayed)) +
+  geom_bar(stat = 'identity',
+           fill = 'darkgreen',
+           alpha = 0.6) +
+  xlab('Week') +
+  ylab('Houses sprayed') +
+  ggtitle('Houses sprayed by week')
+
+g2 <- ggplot(data = irs,
+       aes(x = week,
+       y = houses_sprayed_p)) +
+  geom_area(stat = 'identity',
+           fill = 'darkgreen',
+           alpha = 0.6) +
+  xlab('Week') +
+  ylab('Houses sprayed') +
+  ggtitle('Cumulative houses sprayed by week')
+
+multiplot(g1, g2)
+
+
+```
+
+## Structures sprayed
+
+```{r, fig.height = 8}
+
+g1 <- ggplot(data = irs,
+       aes(x = week,
+       y = n_structures)) +
+  geom_bar(stat = 'identity',
+           fill = 'darkorange',
+           alpha = 0.6) +
+  xlab('Week') +
+  ylab('Structures sprayed') +
+  ggtitle('Structures sprayed by week')
+
+g2 <- ggplot(data = irs,
+       aes(x = week,
+       y = n_structures_p)) +
+  geom_area(stat = 'identity',
+           fill = 'darkorange',
+           alpha = 0.6) +
+  xlab('Week') +
+  ylab('Structures sprayed') +
+  ggtitle('Cumulative structures sprayed by week')
+
+multiplot(g1, g2)
+```
+
+## People protected  
+
+
+```{r, fig.height = 8}
+
+g1 <- ggplot(data = irs,
+       aes(x = week,
+       y = n_protected)) +
+  geom_bar(stat = 'identity',
+           fill = 'darkblue',
+           alpha = 0.6) +
+  xlab('Week') +
+  ylab('People protected') +
+  ggtitle('People protected by week')
+
+g2 <- ggplot(data = irs,
+       aes(x = week,
+       y = n_protected_p)) +
+  geom_area(stat = 'identity',
+           fill = 'darkblue',
+           alpha = 0.6) +
+  xlab('Week') +
+  ylab('People protected') +
+  ggtitle('Cumulative people protected by week')
+
+multiplot(g1, g2)
+```
+
+\newpage
+
+## IRS costs  
+
+(Simply dividing by the total direct cost of `r total_direct_costs`.)
+
+```{r}
+temp <- data.frame(
+  Cost = 
+   c(total_direct_costs /
+    sum(irs$houses_sprayed),
+   total_direct_costs / 
+    sum(irs$n_structures),
+  total_direct_costs / 
+    sum(irs$n_protected)),
+  Category = c('Per house',
+               'Per structure',
+               'Per person')) %>%
+  arrange(Cost)
+
+temp$Category <- 
+  factor(temp$Category,
+         levels = temp$Category)
+
+```
+
+```{r}
+
+ggplot(data = temp,
+       aes(x = Category,
+           y = Cost)) +
+  geom_bar(stat = 'identity',
+           fill = 'darkorange',
+           color = 'black',
+           alpha = 0.4) +
+  ggtitle('Cost per outcome') +
+    geom_text(aes(y = Cost + 2 ,
+                label = paste0('$', round(Cost, 2))),
+            size = 5) 
+
+```
+
+
+## Expenses over time 
+
+(Direct costs only, assuming fixed house cost of $`r round(temp$Cost[temp$Category == 'Per house'], digits = 2)`.)
+
+```{r}
+irs$cost <- irs$houses_sprayed * temp$Cost[temp$Category == 'Per house']
+
+ ggplot(data = irs,
+       aes(x = week,
+       y = cost)) +
+  geom_area(stat = 'identity',
+           fill = 'darkorange',
+           color = 'black',
+           alpha = 0.6) +
+  xlab('Week') +
+  ylab('Dollars') +
+  ggtitle('Cumulative costs per week')
+
+```
